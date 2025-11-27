@@ -1,765 +1,751 @@
-/**
- * ============================================
- * Hala X - Channels App
- * Complete Frontend Application with Firebase Integration
- * ============================================
- * 
- * USAGE INSTRUCTIONS:
- * 1. Firebase Configuration is already provided below
- * 2. Open index.html in a modern web browser
- * 3. Enter access code 5555 on first run
- * 4. For admin panel, enter developer code 7171
- * 5. Admin features: Create, Edit, Delete channels
- * 
- * SECURITY NOTES FOR PRODUCTION:
- * - This implementation uses client-side codes (5555, 7171) for authentication
- * - This is NOT secure for production use
- * - For production, implement:
- *   1. Firebase Authentication with proper user management
- *   2. Firebase Realtime Database Rules to restrict write access
- *   3. Server-side verification of admin status
- *   4. HTTPS-only connections
- *   5. Rate limiting on API calls
- * 
- * RECOMMENDED FIREBASE RULES (for production):
- * {
- *   "rules": {
- *     "channels": {
- *       ".read": true,
- *       ".write": "root.child('admins').child(auth.uid).exists()",
- *       "$channelId": {
- *         ".validate": "newData.hasChildren(['id', 'title', 'thumbnail', 'url', 'category', 'description', 'createdAt'])"
- *       }
- *     }
- *   }
- * }
- */
+// Hala X - تطبيق قنوات التلفزيون
+// تعليمات الاستخدام:
+// 1. افتح index.html في متصفح ويب
+// 2. أدخل الرمز 5555 للوصول الأولي
+// 3. استخدم الرمز 7171 للوصول إلى لوحة التحكم (للمطورين)
+// 4. ملاحظة أمنية: الرمز 7171 غير آمن للاستخدام في بيئة الإنتاج - استخدم Firebase Authentication بدلاً منه
 
-// ============================================
-// Firebase Configuration
-// ============================================
+// تكوين Firebase
 const firebaseConfig = {
-    apiKey: "AIzaSyB3crsDcJI1qYipy6awM6VIoAamLC51zi4",
-    authDomain: "cinmanryo.firebaseapp.com",
-    databaseURL: "https://cinmanryo-default-rtdb.firebaseio.com",
-    projectId: "cinmanryo",
-    storageBucket: "cinmanryo.appspot.com",
-    messagingSenderId: "605207743179",
-    appId: "1:605207743179:web:0bb0b6efdd208e9094a94e",
-    measurementId: "G-SH32EZ7ZY6"
+  apiKey: "AIzaSyB3crsDcJI1qYipy6awM6VIoAamLC51zi4",
+  authDomain: "cinmanryo.firebaseapp.com",
+  databaseURL: "https://cinmanryo-default-rtdb.firebaseio.com",
+  projectId: "cinmanryo",
+  storageBucket: "cinmanryo.appspot.com",
+  messagingSenderId: "605207743179",
+  appId: "1:605207743179:web:0bb0b6efdd208e9094a94e",
+  measurementId: "G-SH32EZ7ZY6"
 };
 
-// ============================================
-// Initialize Firebase
-// ============================================
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
+// تهيئة Firebase
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js';
+import { getDatabase, ref, onValue, push, set, remove } from 'https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js';
 
-console.log('✅ Firebase initialized successfully');
+const app = initializeApp(firebaseConfig);
+const database = getDatabase(app);
 
-// ============================================
-// Constants
-// ============================================
-const ACCESS_CODE = '5555';
-const ADMIN_CODE = '7171';
-const FIRST_RUN_FLAG = 'hala_x_first_run_passed';
-const ADMIN_FLAG = 'hala_x_admin_mode';
-
-// ============================================
-// State Management
-// ============================================
-let appState = {
-    isFirstRunPassed: localStorage.getItem(FIRST_RUN_FLAG) === 'true',
-    isAdminMode: sessionStorage.getItem(ADMIN_FLAG) === 'true',
-    channels: [],
-    filteredChannels: [],
-    currentEditingChannelId: null,
-    currentDeleteChannelId: null
+// حالة التطبيق
+const state = {
+  channels: [],
+  categories: [],
+  isAdmin: localStorage.getItem('isAdmin') === 'true',
+  firstRunCompleted: localStorage.getItem('firstRunCompleted') === 'true',
+  currentTheme: localStorage.getItem('currentTheme') || 'dark',
+  searchQuery: '',
+  exactMatch: false,
+  selectedCategory: 'all',
+  channelToDelete: null
 };
 
-// ============================================
-// DOM Elements
-// ============================================
-const elements = {
-    // Modals
-    accessCodeModal: document.getElementById('accessCodeModal'),
-    adminCodeModal: document.getElementById('adminCodeModal'),
-    adminPanel: document.getElementById('adminPanel'),
-    editChannelModal: document.getElementById('editChannelModal'),
-    deleteConfirmModal: document.getElementById('deleteConfirmModal'),
-    
-    // Access Code Modal
-    accessCodeInput: document.getElementById('accessCodeInput'),
-    accessCodeError: document.getElementById('accessCodeError'),
-    accessCodeSubmitBtn: document.getElementById('accessCodeSubmitBtn'),
-    
-    // Admin Code Modal
-    adminCodeInput: document.getElementById('adminCodeInput'),
-    adminCodeError: document.getElementById('adminCodeError'),
-    adminCodeSubmitBtn: document.getElementById('adminCodeSubmitBtn'),
-    adminCodeCancelBtn: document.getElementById('adminCodeCancelBtn'),
-    
-    // Admin Panel
-    closeAdminBtn: document.getElementById('closeAdminBtn'),
-    createChannelForm: document.getElementById('createChannelForm'),
-    createChannelMessage: document.getElementById('createChannelMessage'),
-    channelsTableBody: document.getElementById('channelsTableBody'),
-    logoutAdminBtn: document.getElementById('logoutAdminBtn'),
-    resetFirstRunBtn: document.getElementById('resetFirstRunBtn'),
-    
-    // Edit Channel Modal
-    editChannelForm: document.getElementById('editChannelForm'),
-    editChannelId: document.getElementById('editChannelId'),
-    editChannelTitle: document.getElementById('editChannelTitle'),
-    editChannelThumbnail: document.getElementById('editChannelThumbnail'),
-    editChannelUrl: document.getElementById('editChannelUrl'),
-    editChannelCategory: document.getElementById('editChannelCategory'),
-    editChannelDescription: document.getElementById('editChannelDescription'),
-    editThumbnailPreview: document.getElementById('editThumbnailPreview'),
-    closeEditModal: document.getElementById('closeEditModal'),
-    cancelEditBtn: document.getElementById('cancelEditBtn'),
-    
-    // Delete Confirm Modal
-    deleteChannelId: document.getElementById('deleteChannelId'),
-    confirmDeleteBtn: document.getElementById('confirmDeleteBtn'),
-    cancelDeleteBtn: document.getElementById('cancelDeleteBtn'),
-    
-    // Main Content
-    channelsGrid: document.getElementById('channelsGrid'),
-    searchInput: document.getElementById('searchInput'),
-    searchBtn: document.getElementById('searchBtn'),
-    adminToggleBtn: document.getElementById('adminToggleBtn'),
-    categoryFilter: document.getElementById('categoryFilter'),
-    exactMatchToggle: document.getElementById('exactMatchToggle'),
-    resetFiltersBtn: document.getElementById('resetFiltersBtn'),
-    
-    // Create Channel Form Fields
-    channelTitle: document.getElementById('channelTitle'),
-    channelThumbnail: document.getElementById('channelThumbnail'),
-    channelUrl: document.getElementById('channelUrl'),
-    channelCategory: document.getElementById('channelCategory'),
-    channelDescription: document.getElementById('channelDescription'),
-    thumbnailPreview: document.getElementById('thumbnailPreview')
-};
-
-// ============================================
-// Initialization
-// ============================================
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 App initialized');
-    
-    // Check if first run is passed
-    if (!appState.isFirstRunPassed) {
-        showModal(elements.accessCodeModal);
-        console.log('📋 Showing first-run access code modal');
-    } else {
-        console.log('✅ First-run already passed');
-        initializeApp();
-    }
-    
-    // Set up event listeners
-    setupEventListeners();
+// تهيئة التطبيق
+document.addEventListener('DOMContentLoaded', function() {
+  initializeApp();
 });
 
-// ============================================
-// Event Listeners Setup
-// ============================================
-function setupEventListeners() {
-    // Access Code Modal
-    elements.accessCodeSubmitBtn.addEventListener('click', handleAccessCodeSubmit);
-    elements.accessCodeInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleAccessCodeSubmit();
-    });
-    
-    // Admin Code Modal
-    elements.adminCodeSubmitBtn.addEventListener('click', handleAdminCodeSubmit);
-    elements.adminCodeInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') handleAdminCodeSubmit();
-    });
-    elements.adminCodeCancelBtn.addEventListener('click', () => hideModal(elements.adminCodeModal));
-    
-    // Admin Panel
-    elements.closeAdminBtn.addEventListener('click', () => hideModal(elements.adminPanel));
-    elements.createChannelForm.addEventListener('submit', handleCreateChannel);
-    elements.logoutAdminBtn.addEventListener('click', handleLogoutAdmin);
-    elements.resetFirstRunBtn.addEventListener('click', handleResetFirstRun);
-    
-    // Edit Channel Modal
-    elements.closeEditModal.addEventListener('click', () => hideModal(elements.editChannelModal));
-    elements.cancelEditBtn.addEventListener('click', () => hideModal(elements.editChannelModal));
-    elements.editChannelForm.addEventListener('submit', handleEditChannelSubmit);
-    
-    // Delete Confirm Modal
-    elements.cancelDeleteBtn.addEventListener('click', () => hideModal(elements.deleteConfirmModal));
-    elements.confirmDeleteBtn.addEventListener('click', handleConfirmDelete);
-    
-    // Main Content
-    elements.adminToggleBtn.addEventListener('click', handleAdminToggle);
-    elements.searchBtn.addEventListener('click', applyFilters);
-    elements.searchInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') applyFilters();
-    });
-    elements.categoryFilter.addEventListener('change', applyFilters);
-    elements.exactMatchToggle.addEventListener('change', applyFilters);
-    elements.resetFiltersBtn.addEventListener('click', resetFilters);
-    
-    // Thumbnail Preview
-    elements.channelThumbnail.addEventListener('change', updateThumbnailPreview);
-    elements.editChannelThumbnail.addEventListener('change', updateEditThumbnailPreview);
-    
-    console.log('✅ Event listeners set up');
-}
-
-// ============================================
-// Access Code Handling
-// ============================================
-function handleAccessCodeSubmit() {
-    const code = elements.accessCodeInput.value.trim();
-    
-    if (code === ACCESS_CODE) {
-        // Correct code
-        localStorage.setItem(FIRST_RUN_FLAG, 'true');
-        appState.isFirstRunPassed = true;
-        hideModal(elements.accessCodeModal);
-        initializeApp();
-        showMessage(elements.createChannelMessage, 'مرحباً بك في Hala X!', 'success');
-        console.log('✅ Access code verified');
-    } else {
-        // Wrong code
-        elements.accessCodeError.textContent = 'رمز الوصول غير صحيح. حاول مرة أخرى.';
-        elements.accessCodeError.style.display = 'block';
-        elements.accessCodeInput.value = '';
-        console.warn('❌ Invalid access code entered');
-    }
-}
-
-// ============================================
-// Admin Code Handling
-// ============================================
-function handleAdminCodeSubmit() {
-    const code = elements.adminCodeInput.value.trim();
-    
-    if (code === ADMIN_CODE) {
-        // Correct admin code
-        sessionStorage.setItem(ADMIN_FLAG, 'true');
-        appState.isAdminMode = true;
-        hideModal(elements.adminCodeModal);
-        showModal(elements.adminPanel);
-        loadChannelsForAdmin();
-        showMessage(elements.createChannelMessage, 'مرحباً بك في لوحة التحكم الإدارية!', 'success');
-        console.log('✅ Admin code verified - Admin mode activated');
-    } else {
-        // Wrong code
-        elements.adminCodeError.textContent = 'رمز المطور غير صحيح.';
-        elements.adminCodeError.style.display = 'block';
-        elements.adminCodeInput.value = '';
-        console.warn('❌ Invalid admin code entered');
-    }
-}
-
-// ============================================
-// Admin Toggle
-// ============================================
-function handleAdminToggle() {
-    if (appState.isAdminMode) {
-        // Already in admin mode - close panel
-        hideModal(elements.adminPanel);
-    } else {
-        // Show admin code modal
-        elements.adminCodeError.style.display = 'none';
-        elements.adminCodeInput.value = '';
-        showModal(elements.adminCodeModal);
-        console.log('📋 Admin code modal shown');
-    }
-}
-
-// ============================================
-// Initialize App (After First Run)
-// ============================================
+// وظيفة تهيئة التطبيق
 function initializeApp() {
-    console.log('🔄 Initializing app...');
+  // تعيين السمة المختارة
+  document.body.setAttribute('data-theme', state.currentTheme);
+  
+  // إعداد معالجات الأحداث
+  setupEventListeners();
+  
+  // التحقق من الوصول الأولي
+  if (!state.firstRunCompleted) {
+    showAccessModal();
+  } else {
+    hideLoadingScreen();
     loadChannels();
+  }
+  
+  // إظهار زر المدير إذا كان مسجلاً دخوله
+  if (state.isAdmin) {
+    document.getElementById('adminBtn').classList.remove('hidden');
+  }
+  
+  // تطبيق السمة المختارة
+  applyTheme(state.currentTheme);
 }
 
-// ============================================
-// Firebase - Load Channels
-// ============================================
+// إعداد معالجات الأحداث
+function setupEventListeners() {
+  // رمز الوصول الأولي
+  document.getElementById('submitAccessCode').addEventListener('click', handleAccessCodeSubmit);
+  document.getElementById('accessCode').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleAccessCodeSubmit();
+  });
+  
+  // رمز المطور
+  document.getElementById('showDeveloperAccess').addEventListener('click', showDeveloperModal);
+  document.getElementById('submitDeveloperCode').addEventListener('click', handleDeveloperCodeSubmit);
+  document.getElementById('developerCode').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleDeveloperCodeSubmit();
+  });
+  document.getElementById('backToAccess').addEventListener('click', showAccessModal);
+  
+  // البحث والتصفية
+  document.getElementById('searchInput').addEventListener('input', handleSearch);
+  document.getElementById('searchButton').addEventListener('click', handleSearch);
+  document.getElementById('exactMatch').addEventListener('change', handleSearch);
+  
+  // الإعدادات
+  document.getElementById('settingsBtn').addEventListener('click', showSettingsPanel);
+  document.getElementById('closeSettings').addEventListener('click', hideSettingsPanel);
+  
+  // إدارة السمات
+  document.querySelectorAll('.theme-option').forEach(option => {
+    option.addEventListener('click', function() {
+      const theme = this.getAttribute('data-theme');
+      applyTheme(theme);
+      
+      // تحديث الخيار النشط
+      document.querySelectorAll('.theme-option').forEach(opt => {
+        opt.classList.remove('active');
+      });
+      this.classList.add('active');
+    });
+  });
+  
+  // إجراءات الحساب
+  document.getElementById('logoutAdmin').addEventListener('click', logoutAdmin);
+  document.getElementById('resetFirstRun').addEventListener('click', resetFirstRun);
+  
+  // لوحة التحكم
+  document.getElementById('adminBtn').addEventListener('click', showAdminPanel);
+  document.getElementById('closeAdmin').addEventListener('click', hideAdminPanel);
+  
+  // علامات التبويب في لوحة التحكم
+  document.querySelectorAll('.tab-btn').forEach(tab => {
+    tab.addEventListener('click', function() {
+      const tabId = this.getAttribute('data-tab');
+      switchAdminTab(tabId);
+    });
+  });
+  
+  // نموذج إنشاء القناة
+  document.getElementById('createChannelForm').addEventListener('submit', handleCreateChannel);
+  
+  // معاينة الصورة المصغرة
+  document.getElementById('channelThumbnail').addEventListener('input', previewThumbnail);
+  
+  // تأكيد الحذف
+  document.getElementById('confirmDelete').addEventListener('click', confirmDeleteChannel);
+  document.getElementById('cancelDelete').addEventListener('click', hideDeleteModal);
+  
+  // إغلاق الرسائل المنبثقة
+  document.getElementById('closeToast').addEventListener('click', hideToast);
+}
+
+// معالجة رمز الوصول الأولي
+function handleAccessCodeSubmit() {
+  const accessCode = document.getElementById('accessCode').value;
+  const errorElement = document.getElementById('accessError');
+  
+  if (accessCode === '5555') {
+    state.firstRunCompleted = true;
+    localStorage.setItem('firstRunCompleted', 'true');
+    hideAccessModal();
+    hideLoadingScreen();
+    loadChannels();
+    showToast('تم الوصول بنجاح!', 'success');
+  } else {
+    errorElement.textContent = 'رمز الوصول غير صحيح. الرجاء المحاولة مرة أخرى.';
+  }
+}
+
+// معالجة رمز المطور
+function handleDeveloperCodeSubmit() {
+  const developerCode = document.getElementById('developerCode').value;
+  const errorElement = document.getElementById('developerError');
+  
+  if (developerCode === '7171') {
+    state.isAdmin = true;
+    localStorage.setItem('isAdmin', 'true');
+    document.getElementById('adminBtn').classList.remove('hidden');
+    hideDeveloperModal();
+    showToast('تم تفعيل وضع المطور!', 'success');
+    
+    // ملاحظة أمنية: هذا النهج غير آمن للاستخدام في بيئة الإنتاج
+    // في بيئة الإنتاج، استخدم Firebase Authentication للتحقق من هوية المستخدمين
+    console.warn('ملاحظة أمنية: التحقق من المطور يتم على جانب العميل فقط. في بيئة الإنتاج، استخدم Firebase Authentication مع قواعد قاعدة البيانات المناسبة.');
+  } else {
+    errorElement.textContent = 'رمز المطور غير صحيح. الرجاء المحاولة مرة أخرى.';
+  }
+}
+
+// تحميل القنوات من Firebase
 function loadChannels() {
-    console.log('📥 Loading channels from Firebase...');
+  const channelsRef = ref(database, 'channels');
+  
+  onValue(channelsRef, (snapshot) => {
+    const data = snapshot.val();
+    state.channels = [];
     
-    const channelsRef = database.ref('channels');
-    
-    // Set up realtime listener
-    channelsRef.on('value', (snapshot) => {
-        appState.channels = [];
-        
-        snapshot.forEach((childSnapshot) => {
-            const channel = childSnapshot.val();
-            channel.firebaseKey = childSnapshot.key;
-            appState.channels.push(channel);
+    if (data) {
+      // تحويل البيانات إلى مصفوفة
+      Object.keys(data).forEach(key => {
+        state.channels.push({
+          id: key,
+          ...data[key]
         });
-        
-        console.log(`✅ Loaded ${appState.channels.length} channels`);
-        applyFilters();
-    }, (error) => {
-        console.error('❌ Error loading channels:', error);
-        showErrorMessage('خطأ في تحميل القنوات. تحقق من اتصال الإنترنت.');
+      });
+      
+      // تحديث التصنيفات
+      updateCategories();
+      
+      // عرض القنوات
+      renderChannels();
+    } else {
+      // لا توجد قنوات
+      document.getElementById('emptyState').classList.remove('hidden');
+      document.getElementById('channelsGrid').innerHTML = '';
+    }
+    
+    // تحديث قائمة القنوات في لوحة التحكم إذا كانت مفتوحة
+    if (state.isAdmin && document.getElementById('adminPanel').classList.contains('active')) {
+      renderAdminChannelsList();
+    }
+  }, (error) => {
+    console.error('Error loading channels:', error);
+    showToast('حدث خطأ في تحميل القنوات', 'error');
+  });
+}
+
+// تحديث قائمة التصنيفات
+function updateCategories() {
+  const categories = new Set();
+  categories.add('all'); // إضافة خيار "الكل"
+  
+  state.channels.forEach(channel => {
+    if (channel.category) {
+      categories.add(channel.category);
+    }
+  });
+  
+  state.categories = Array.from(categories);
+  renderCategoryFilters();
+}
+
+// عرض مرشحات التصنيف
+function renderCategoryFilters() {
+  const filtersContainer = document.querySelector('.category-filters');
+  
+  // إزالة الأزرار الحالية (باستثناء زر "الكل")
+  const allButton = filtersContainer.querySelector('[data-category="all"]');
+  filtersContainer.innerHTML = '';
+  filtersContainer.appendChild(allButton);
+  
+  // إضافة أزرار التصنيفات
+  state.categories.forEach(category => {
+    if (category !== 'all') {
+      const button = document.createElement('button');
+      button.className = 'filter-btn';
+      button.setAttribute('data-category', category);
+      button.textContent = category;
+      button.addEventListener('click', handleCategoryFilter);
+      filtersContainer.appendChild(button);
+    }
+  });
+  
+  // تعيين النشط
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.getAttribute('data-category') === state.selectedCategory) {
+      btn.classList.add('active');
+    }
+  });
+}
+
+// معالجة البحث
+function handleSearch() {
+  state.searchQuery = document.getElementById('searchInput').value.trim();
+  state.exactMatch = document.getElementById('exactMatch').checked;
+  renderChannels();
+}
+
+// معالجة تصفية التصنيف
+function handleCategoryFilter(e) {
+  const category = e.currentTarget.getAttribute('data-category');
+  state.selectedCategory = category;
+  
+  // تحديث حالة الأزرار النشطة
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.classList.remove('active');
+  });
+  e.currentTarget.classList.add('active');
+  
+  renderChannels();
+}
+
+// عرض القنوات
+function renderChannels() {
+  const channelsGrid = document.getElementById('channelsGrid');
+  const emptyState = document.getElementById('emptyState');
+  
+  // تصفية القنوات بناءً على البحث والتصنيف
+  let filteredChannels = state.channels;
+  
+  // تطبيق تصفية البحث
+  if (state.searchQuery) {
+    if (state.exactMatch) {
+      filteredChannels = filteredChannels.filter(channel => 
+        channel.title === state.searchQuery
+      );
+    } else {
+      filteredChannels = filteredChannels.filter(channel => 
+        channel.title.toLowerCase().includes(state.searchQuery.toLowerCase())
+      );
+    }
+  }
+  
+  // تطبيق تصفية التصنيف
+  if (state.selectedCategory !== 'all') {
+    filteredChannels = filteredChannels.filter(channel => 
+      channel.category === state.selectedCategory
+    );
+  }
+  
+  // عرض القنوات المصفاة أو حالة عدم وجود قنوات
+  if (filteredChannels.length === 0) {
+    channelsGrid.innerHTML = '';
+    emptyState.classList.remove('hidden');
+    return;
+  }
+  
+  emptyState.classList.add('hidden');
+  
+  // إنشاء بطاقات القنوات
+  channelsGrid.innerHTML = filteredChannels.map(channel => {
+    const isNew = isChannelNew(channel.createdAt);
+    
+    return `
+      <div class="channel-card ${isNew ? 'new' : ''}">
+        <div class="channel-thumbnail">
+          ${channel.thumbnail ? 
+            `<img src="${channel.thumbnail}" alt="${channel.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"> 
+             <div class="placeholder" style="display:none;"><i class="fas fa-tv"></i></div>` :
+            `<div class="placeholder"><i class="fas fa-tv"></i></div>`
+          }
+        </div>
+        <div class="channel-info">
+          <h3 class="channel-title">${channel.title}</h3>
+          <span class="channel-category">${channel.category || 'بدون تصنيف'}</span>
+          <p class="channel-description">${channel.description || 'لا يوجد وصف'}</p>
+          <div class="channel-actions">
+            <button class="btn-primary watch-channel" data-url="${channel.url}">
+              <i class="fas fa-play"></i> مشاهدة
+            </button>
+            ${state.isAdmin ? `
+              <button class="btn-secondary edit-channel" data-id="${channel.id}">
+                <i class="fas fa-edit"></i>
+              </button>
+            ` : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  // إضافة معالجات الأحداث للقنوات
+  document.querySelectorAll('.watch-channel').forEach(button => {
+    button.addEventListener('click', function() {
+      const url = this.getAttribute('data-url');
+      window.open(url, '_blank', 'noopener,noreferrer');
     });
-}
-
-// ============================================
-// Firebase - Load Channels for Admin
-// ============================================
-function loadChannelsForAdmin() {
-    console.log('📥 Loading channels for admin...');
-    
-    const channelsRef = database.ref('channels');
-    
-    channelsRef.on('value', (snapshot) => {
-        const channels = [];
-        
-        snapshot.forEach((childSnapshot) => {
-            const channel = childSnapshot.val();
-            channel.firebaseKey = childSnapshot.key;
-            channels.push(channel);
-        });
-        
-        console.log(`✅ Loaded ${channels.length} channels for admin`);
-        renderChannelsTable(channels);
+  });
+  
+  if (state.isAdmin) {
+    document.querySelectorAll('.edit-channel').forEach(button => {
+      button.addEventListener('click', function() {
+        const channelId = this.getAttribute('data-id');
+        editChannel(channelId);
+      });
     });
+  }
 }
 
-// ============================================
-// Render Channels Grid
-// ============================================
-function renderChannelsGrid(channels) {
-    console.log(`🎨 Rendering ${channels.length} channels`);
-    
-    if (channels.length === 0) {
-        elements.channelsGrid.innerHTML = '<div class="empty-message">لا توجد قنوات متطابقة.</div>';
-        return;
-    }
-    
-    elements.channelsGrid.innerHTML = channels.map(channel => {
-        const isNew = isChannelNew(channel.createdAt);
-        const newBadge = isNew ? '<span class="channel-badge new">جديد</span>' : '';
-        
-        return `
-            <div class="channel-card">
-                <div class="channel-thumbnail">
-                    <img src="${channel.thumbnail}" alt="${channel.title}" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%23e2e8f0%22 width=%22100%22 height=%22100%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2214%22 fill=%22%2394a3b8%22 text-anchor=%22middle%22 dy=%22.3em%22%3EImage Not Found%3C/text%3E%3C/svg%3E'">
-                    ${newBadge}
-                </div>
-                <div class="channel-info">
-                    <h3 class="channel-title">${escapeHtml(channel.title)}</h3>
-                    <span class="channel-category">${escapeHtml(channel.category)}</span>
-                    <p class="channel-description">${escapeHtml(channel.description)}</p>
-                    <div class="channel-actions">
-                        <button class="btn-visit" onclick="visitChannel('${escapeHtml(channel.url)}')">
-                            زيارة القناة →
-                        </button>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-// ============================================
-// Render Channels Table (Admin)
-// ============================================
-function renderChannelsTable(channels) {
-    console.log(`📊 Rendering admin table with ${channels.length} channels`);
-    
-    if (channels.length === 0) {
-        elements.channelsTableBody.innerHTML = '<tr><td colspan="3" style="text-align: center;">لا توجد قنوات حتى الآن.</td></tr>';
-        return;
-    }
-    
-    elements.channelsTableBody.innerHTML = channels.map(channel => `
-        <tr>
-            <td>${escapeHtml(channel.title)}</td>
-            <td>${escapeHtml(channel.category)}</td>
-            <td>
-                <div class="table-actions">
-                    <button class="btn-edit" onclick="openEditModal('${channel.firebaseKey}')">تعديل</button>
-                    <button class="btn-delete" onclick="openDeleteModal('${channel.firebaseKey}')">حذف</button>
-                </div>
-            </td>
-        </tr>
-    `).join('');
-}
-
-// ============================================
-// Create Channel
-// ============================================
-function handleCreateChannel(e) {
-    e.preventDefault();
-    
-    const title = elements.channelTitle.value.trim();
-    const thumbnail = elements.channelThumbnail.value.trim();
-    const url = elements.channelUrl.value.trim();
-    const category = elements.channelCategory.value.trim();
-    const description = elements.channelDescription.value.trim();
-    
-    // Validation
-    if (!title || !thumbnail || !url || !category) {
-        showMessage(elements.createChannelMessage, 'يرجى ملء جميع الحقول المطلوبة.', 'error');
-        console.warn('❌ Form validation failed');
-        return;
-    }
-    
-    if (!isValidUrl(thumbnail) || !isValidUrl(url)) {
-        showMessage(elements.createChannelMessage, 'يرجى إدخال روابط صحيحة.', 'error');
-        console.warn('❌ URL validation failed');
-        return;
-    }
-    
-    // Create channel object
-    const newChannel = {
-        id: generateId(),
-        title,
-        thumbnail,
-        url,
-        category,
-        description,
-        createdAt: new Date().toISOString()
-    };
-    
-    // Push to Firebase
-    const channelsRef = database.ref('channels');
-    channelsRef.push(newChannel)
-        .then(() => {
-            console.log('✅ Channel created successfully');
-            showMessage(elements.createChannelMessage, 'تم إضافة القناة بنجاح!', 'success');
-            
-            // Reset form
-            elements.createChannelForm.reset();
-            elements.thumbnailPreview.innerHTML = '';
-        })
-        .catch((error) => {
-            console.error('❌ Error creating channel:', error);
-            showMessage(elements.createChannelMessage, 'خطأ في إضافة القناة. حاول مرة أخرى.', 'error');
-        });
-}
-
-// ============================================
-// Edit Channel
-// ============================================
-function openEditModal(firebaseKey) {
-    const channel = appState.channels.find(ch => ch.firebaseKey === firebaseKey);
-    
-    if (!channel) {
-        console.error('❌ Channel not found');
-        return;
-    }
-    
-    appState.currentEditingChannelId = firebaseKey;
-    
-    elements.editChannelId.value = firebaseKey;
-    elements.editChannelTitle.value = channel.title;
-    elements.editChannelThumbnail.value = channel.thumbnail;
-    elements.editChannelUrl.value = channel.url;
-    elements.editChannelCategory.value = channel.category;
-    elements.editChannelDescription.value = channel.description;
-    
-    // Show thumbnail preview
-    if (channel.thumbnail) {
-        elements.editThumbnailPreview.innerHTML = `<img src="${channel.thumbnail}" alt="preview">`;
-    }
-    
-    showModal(elements.editChannelModal);
-    console.log('📝 Edit modal opened for channel:', channel.title);
-}
-
-function handleEditChannelSubmit(e) {
-    e.preventDefault();
-    
-    const firebaseKey = elements.editChannelId.value;
-    const title = elements.editChannelTitle.value.trim();
-    const thumbnail = elements.editChannelThumbnail.value.trim();
-    const url = elements.editChannelUrl.value.trim();
-    const category = elements.editChannelCategory.value.trim();
-    const description = elements.editChannelDescription.value.trim();
-    
-    // Validation
-    if (!title || !thumbnail || !url || !category) {
-        alert('يرجى ملء جميع الحقول المطلوبة.');
-        return;
-    }
-    
-    if (!isValidUrl(thumbnail) || !isValidUrl(url)) {
-        alert('يرجى إدخال روابط صحيحة.');
-        return;
-    }
-    
-    // Get original channel to preserve createdAt
-    const originalChannel = appState.channels.find(ch => ch.firebaseKey === firebaseKey);
-    
-    const updatedChannel = {
-        id: originalChannel.id,
-        title,
-        thumbnail,
-        url,
-        category,
-        description,
-        createdAt: originalChannel.createdAt
-    };
-    
-    // Update in Firebase
-    const channelRef = database.ref(`channels/${firebaseKey}`);
-    channelRef.set(updatedChannel)
-        .then(() => {
-            console.log('✅ Channel updated successfully');
-            hideModal(elements.editChannelModal);
-            showMessage(elements.createChannelMessage, 'تم تحديث القناة بنجاح!', 'success');
-        })
-        .catch((error) => {
-            console.error('❌ Error updating channel:', error);
-            alert('خطأ في تحديث القناة. حاول مرة أخرى.');
-        });
-}
-
-// ============================================
-// Delete Channel
-// ============================================
-function openDeleteModal(firebaseKey) {
-    appState.currentDeleteChannelId = firebaseKey;
-    elements.deleteChannelId.value = firebaseKey;
-    showModal(elements.deleteConfirmModal);
-    console.log('🗑️ Delete confirmation modal opened');
-}
-
-function handleConfirmDelete() {
-    const firebaseKey = elements.deleteChannelId.value;
-    
-    const channelRef = database.ref(`channels/${firebaseKey}`);
-    channelRef.remove()
-        .then(() => {
-            console.log('✅ Channel deleted successfully');
-            hideModal(elements.deleteConfirmModal);
-            showMessage(elements.createChannelMessage, 'تم حذف القناة بنجاح!', 'success');
-        })
-        .catch((error) => {
-            console.error('❌ Error deleting channel:', error);
-            alert('خطأ في حذف القناة. حاول مرة أخرى.');
-        });
-}
-
-// ============================================
-// Admin Logout
-// ============================================
-function handleLogoutAdmin() {
-    sessionStorage.removeItem(ADMIN_FLAG);
-    appState.isAdminMode = false;
-    hideModal(elements.adminPanel);
-    console.log('🚪 Admin mode deactivated');
-    alert('تم تسجيل الخروج من الإدارة.');
-}
-
-// ============================================
-// Reset First Run
-// ============================================
-function handleResetFirstRun() {
-    if (confirm('هل تريد حقاً إعادة تعيين الوصول الأول؟ سيتم طلب رمز الوصول عند إعادة التحميل.')) {
-        localStorage.removeItem(FIRST_RUN_FLAG);
-        appState.isFirstRunPassed = false;
-        console.log('🔄 First-run flag reset');
-        location.reload();
-    }
-}
-
-// ============================================
-// Search and Filter
-// ============================================
-function applyFilters() {
-    const searchTerm = elements.searchInput.value.trim().toLowerCase();
-    const selectedCategory = elements.categoryFilter.value;
-    const exactMatch = elements.exactMatchToggle.checked;
-    
-    console.log(`🔍 Applying filters - Search: "${searchTerm}", Category: "${selectedCategory}", Exact: ${exactMatch}`);
-    
-    appState.filteredChannels = appState.channels.filter(channel => {
-        // Category filter
-        if (selectedCategory && channel.category !== selectedCategory) {
-            return false;
-        }
-        
-        // Search filter
-        if (searchTerm) {
-            const channelTitle = channel.title.toLowerCase();
-            if (exactMatch) {
-                // Exact match
-                if (channelTitle !== searchTerm) {
-                    return false;
-                }
-            } else {
-                // Partial match
-                if (!channelTitle.includes(searchTerm)) {
-                    return false;
-                }
-            }
-        }
-        
-        return true;
-    });
-    
-    renderChannelsGrid(appState.filteredChannels);
-    console.log(`✅ Filtered to ${appState.filteredChannels.length} channels`);
-}
-
-function resetFilters() {
-    elements.searchInput.value = '';
-    elements.categoryFilter.value = '';
-    elements.exactMatchToggle.checked = false;
-    applyFilters();
-    console.log('🔄 Filters reset');
-}
-
-// ============================================
-// Visit Channel
-// ============================================
-function visitChannel(url) {
-    console.log(`🔗 Opening channel: ${url}`);
-    window.open(url, '_blank', 'noopener,noreferrer');
-}
-
-// ============================================
-// Thumbnail Preview
-// ============================================
-function updateThumbnailPreview() {
-    const url = elements.channelThumbnail.value.trim();
-    
-    if (!url) {
-        elements.thumbnailPreview.innerHTML = '';
-        return;
-    }
-    
-    if (!isValidUrl(url)) {
-        elements.thumbnailPreview.innerHTML = '<span style="color: #ef4444;">رابط غير صحيح</span>';
-        return;
-    }
-    
-    elements.thumbnailPreview.innerHTML = `<img src="${url}" alt="preview" onerror="this.parentElement.innerHTML='<span style=\\"color: #ef4444;\\">لم يتمكن من تحميل الصورة</span>'">`;
-    console.log('🖼️ Thumbnail preview updated');
-}
-
-function updateEditThumbnailPreview() {
-    const url = elements.editChannelThumbnail.value.trim();
-    
-    if (!url) {
-        elements.editThumbnailPreview.innerHTML = '';
-        return;
-    }
-    
-    if (!isValidUrl(url)) {
-        elements.editThumbnailPreview.innerHTML = '<span style="color: #ef4444;">رابط غير صحيح</span>';
-        return;
-    }
-    
-    elements.editThumbnailPreview.innerHTML = `<img src="${url}" alt="preview" onerror="this.parentElement.innerHTML='<span style=\\"color: #ef4444;\\">لم يتمكن من تحميل الصورة</span>'">`;
-    console.log('🖼️ Edit thumbnail preview updated');
-}
-
-// ============================================
-// Modal Utilities
-// ============================================
-function showModal(modal) {
-    modal.classList.add('active');
-    modal.setAttribute('aria-hidden', 'false');
-    console.log('📋 Modal shown');
-}
-
-function hideModal(modal) {
-    modal.classList.remove('active');
-    modal.setAttribute('aria-hidden', 'true');
-    console.log('📋 Modal hidden');
-}
-
-// ============================================
-// Message Display
-// ============================================
-function showMessage(element, message, type = 'success') {
-    element.textContent = message;
-    element.className = `message ${type}`;
-    element.style.display = 'block';
-    
-    // Auto-hide success messages after 3 seconds
-    if (type === 'success') {
-        setTimeout(() => {
-            element.style.display = 'none';
-        }, 3000);
-    }
-    
-    console.log(`💬 Message: ${message}`);
-}
-
-function showErrorMessage(message) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = 'message error';
-    messageDiv.textContent = message;
-    messageDiv.style.position = 'fixed';
-    messageDiv.style.top = '20px';
-    messageDiv.style.right = '20px';
-    messageDiv.style.zIndex = '2000';
-    document.body.appendChild(messageDiv);
-    
-    setTimeout(() => {
-        messageDiv.remove();
-    }, 5000);
-    
-    console.error(`❌ Error: ${message}`);
-}
-
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Check if a channel is new (created within last 7 days)
- */
+// التحقق مما إذا كانت القناة جديدة (تم إنشاؤها خلال آخر 7 أيام)
 function isChannelNew(createdAt) {
-    if (!createdAt) return false;
-    
-    const createdDate = new Date(createdAt);
-    const now = new Date();
-    const daysDiff = (now - createdDate) / (1000 * 60 * 60 * 24);
-    
-    return daysDiff <= 7;
+  if (!createdAt) return false;
+  
+  const createdDate = new Date(createdAt);
+  const now = new Date();
+  const diffTime = Math.abs(now - createdDate);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return diffDays <= 7;
 }
 
-/**
- * Generate unique ID
- */
-function generateId() {
-    return 'ch_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+// معالجة إنشاء قناة جديدة
+function handleCreateChannel(e) {
+  e.preventDefault();
+  
+  const title = document.getElementById('channelTitle').value.trim();
+  const thumbnail = document.getElementById('channelThumbnail').value.trim();
+  const url = document.getElementById('channelUrl').value.trim();
+  const category = document.getElementById('channelCategory').value.trim();
+  const description = document.getElementById('channelDescription').value.trim();
+  
+  // التحقق من صحة البيانات
+  if (!title || !thumbnail || !url || !category) {
+    showToast('يرجى ملء جميع الحقول المطلوبة', 'error');
+    return;
+  }
+  
+  // التحقق من صحة الروابط
+  try {
+    new URL(thumbnail);
+    new URL(url);
+  } catch (e) {
+    showToast('يرجى إدخال روابط صحيحة', 'error');
+    return;
+  }
+  
+  // إنشاء القناة
+  const channelsRef = ref(database, 'channels');
+  const newChannelRef = push(channelsRef);
+  
+  const channelData = {
+    title,
+    thumbnail,
+    url,
+    category,
+    description,
+    createdAt: new Date().toISOString()
+  };
+  
+  set(newChannelRef, channelData)
+    .then(() => {
+      showToast('تم إنشاء القناة بنجاح!', 'success');
+      document.getElementById('createChannelForm').reset();
+      document.getElementById('thumbnailPreview').innerHTML = '';
+    })
+    .catch(error => {
+      console.error('Error creating channel:', error);
+      showToast('حدث خطأ في إنشاء القناة', 'error');
+    });
 }
 
-/**
- * Validate URL format
- */
-function isValidUrl(string) {
-    try {
-        new URL(string);
-        return true;
-    } catch (_) {
-        return false;
+// معاينة الصورة المصغرة
+function previewThumbnail() {
+  const thumbnailUrl = document.getElementById('channelThumbnail').value.trim();
+  const preview = document.getElementById('thumbnailPreview');
+  
+  if (!thumbnailUrl) {
+    preview.innerHTML = '';
+    return;
+  }
+  
+  // التحقق من أن الرابط صحيح
+  try {
+    new URL(thumbnailUrl);
+  } catch (e) {
+    preview.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+    return;
+  }
+  
+  preview.innerHTML = `<img src="${thumbnailUrl}" alt="معاينة الصورة" onerror="this.parentElement.innerHTML='<i class=\\'fas fa-exclamation-triangle\\'></i>'">`;
+}
+
+// عرض قائمة القنوات في لوحة التحكم
+function renderAdminChannelsList() {
+  const channelsList = document.querySelector('.channels-list');
+  
+  if (state.channels.length === 0) {
+    channelsList.innerHTML = '<p class="empty-state">لا توجد قنوات لإدارتها</p>';
+    return;
+  }
+  
+  channelsList.innerHTML = state.channels.map(channel => `
+    <div class="admin-channel-item">
+      <div class="admin-channel-thumb">
+        ${channel.thumbnail ? 
+          `<img src="${channel.thumbnail}" alt="${channel.title}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"> 
+           <div class="placeholder" style="display:none;"><i class="fas fa-tv"></i></div>` :
+          `<div class="placeholder"><i class="fas fa-tv"></i></div>`
+        }
+      </div>
+      <div class="admin-channel-info">
+        <div class="admin-channel-title">${channel.title}</div>
+        <div class="admin-channel-category">${channel.category || 'بدون تصنيف'}</div>
+      </div>
+      <div class="admin-channel-actions">
+        <button class="btn-secondary edit-channel-admin" data-id="${channel.id}">
+          <i class="fas fa-edit"></i>
+        </button>
+        <button class="btn-danger delete-channel-admin" data-id="${channel.id}">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+    </div>
+  `).join('');
+  
+  // إضافة معالجات الأحداث
+  document.querySelectorAll('.edit-channel-admin').forEach(button => {
+    button.addEventListener('click', function() {
+      const channelId = this.getAttribute('data-id');
+      editChannel(channelId);
+    });
+  });
+  
+  document.querySelectorAll('.delete-channel-admin').forEach(button => {
+    button.addEventListener('click', function() {
+      const channelId = this.getAttribute('data-id');
+      showDeleteModal(channelId);
+    });
+  });
+}
+
+// تحرير القناة
+function editChannel(channelId) {
+  const channel = state.channels.find(c => c.id === channelId);
+  if (!channel) return;
+  
+  // ملء النموذج ببيانات القناة
+  document.getElementById('channelTitle').value = channel.title;
+  document.getElementById('channelThumbnail').value = channel.thumbnail || '';
+  document.getElementById('channelUrl').value = channel.url;
+  document.getElementById('channelCategory').value = channel.category || '';
+  document.getElementById('channelDescription').value = channel.description || '';
+  
+  // معاينة الصورة المصغرة
+  previewThumbnail();
+  
+  // التبديل إلى علامة التبويب "إنشاء" (سنستخدمها للتحرير أيضًا)
+  switchAdminTab('create');
+  
+  // تغيير النص إلى "تحديث"
+  const submitButton = document.querySelector('#createChannelForm button[type="submit"]');
+  submitButton.innerHTML = '<i class="fas fa-save"></i> تحديث القناة';
+  
+  // تغيير معالج النموذج للتحديث بدلاً من الإنشاء
+  const form = document.getElementById('createChannelForm');
+  form.onsubmit = function(e) {
+    e.preventDefault();
+    updateChannel(channelId);
+  };
+  
+  // إظهار لوحة التحكم إذا لم تكن مفتوحة
+  showAdminPanel();
+}
+
+// تحديث القناة
+function updateChannel(channelId) {
+  const title = document.getElementById('channelTitle').value.trim();
+  const thumbnail = document.getElementById('channelThumbnail').value.trim();
+  const url = document.getElementById('channelUrl').value.trim();
+  const category = document.getElementById('channelCategory').value.trim();
+  const description = document.getElementById('channelDescription').value.trim();
+  
+  // التحقق من صحة البيانات
+  if (!title || !thumbnail || !url || !category) {
+    showToast('يرجى ملء جميع الحقول المطلوبة', 'error');
+    return;
+  }
+  
+  // التحقق من صحة الروابط
+  try {
+    new URL(thumbnail);
+    new URL(url);
+  } catch (e) {
+    showToast('يرجى إدخال روابط صحيحة', 'error');
+    return;
+  }
+  
+  // تحديث القناة
+  const channelRef = ref(database, `channels/${channelId}`);
+  
+  const channelData = {
+    title,
+    thumbnail,
+    url,
+    category,
+    description,
+    createdAt: state.channels.find(c => c.id === channelId).createdAt
+  };
+  
+  set(channelRef, channelData)
+    .then(() => {
+      showToast('تم تحديث القناة بنجاح!', 'success');
+      
+      // إعادة تعيين النموذج
+      document.getElementById('createChannelForm').reset();
+      document.getElementById('thumbnailPreview').innerHTML = '';
+      
+      // إعادة تعيين معالج النموذج إلى الإنشاء
+      const form = document.getElementById('createChannelForm');
+      form.onsubmit = handleCreateChannel;
+      
+      // إعادة تعيين نص الزر
+      const submitButton = document.querySelector('#createChannelForm button[type="submit"]');
+      submitButton.innerHTML = '<i class="fas fa-plus"></i> إضافة قناة';
+    })
+    .catch(error => {
+      console.error('Error updating channel:', error);
+      showToast('حدث خطأ في تحديث القناة', 'error');
+    });
+}
+
+// عرض نافذة تأكيد الحذف
+function showDeleteModal(channelId) {
+  state.channelToDelete = channelId;
+  document.getElementById('deleteModal').classList.add('active');
+}
+
+// إخفاء نافذة تأكيد الحذف
+function hideDeleteModal() {
+  state.channelToDelete = null;
+  document.getElementById('deleteModal').classList.remove('active');
+}
+
+// تأكيد حذف القناة
+function confirmDeleteChannel() {
+  if (!state.channelToDelete) return;
+  
+  const channelRef = ref(database, `channels/${state.channelToDelete}`);
+  
+  remove(channelRef)
+    .then(() => {
+      showToast('تم حذف القناة بنجاح!', 'success');
+      hideDeleteModal();
+    })
+    .catch(error => {
+      console.error('Error deleting channel:', error);
+      showToast('حدث خطأ في حذف القناة', 'error');
+    });
+}
+
+// تبديل علامات التبويب في لوحة التحكم
+function switchAdminTab(tabId) {
+  // تحديث أزرار علامات التبويب
+  document.querySelectorAll('.tab-btn').forEach(tab => {
+    tab.classList.remove('active');
+    if (tab.getAttribute('data-tab') === tabId) {
+      tab.classList.add('active');
     }
+  });
+  
+  // تحديث محتوى علامات التبويب
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.remove('active');
+    if (panel.id === `${tabId}Tab`) {
+      panel.classList.add('active');
+    }
+  });
+  
+  // إذا كانت علامة التبويب "إدارة"، قم بتحديث القائمة
+  if (tabId === 'manage') {
+    renderAdminChannelsList();
+  }
 }
 
-/**
- * Escape HTML to prevent XSS
- */
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+// تطبيق السمة
+function applyTheme(theme) {
+  state.currentTheme = theme;
+  document.body.setAttribute('data-theme', theme);
+  localStorage.setItem('currentTheme', theme);
 }
 
-// ============================================
-// Console Logging
-// ============================================
-console.log('%c🎬 Hala X - Channels App Loaded', 'color: #6366f1; font-size: 16px; font-weight: bold;');
-console.log('%cVersion: 1.0.0', 'color: #64748b;');
-console.log('%cAccess Code: 5555 | Admin Code: 7171', 'color: #ec4899; font-weight: bold;');
-console.log('%cNote: This is a development build. For production, implement proper authentication and Firebase rules.', 'color: #ef4444;');
+// تسجيل خروج المطور
+function logoutAdmin() {
+  state.isAdmin = false;
+  localStorage.setItem('isAdmin', 'false');
+  document.getElementById('adminBtn').classList.add('hidden');
+  hideAdminPanel();
+  hideSettingsPanel();
+  showToast('تم تسجيل خروج المطور', 'success');
+}
+
+// إعادة تعيين الوصول الأولي
+function resetFirstRun() {
+  state.firstRunCompleted = false;
+  localStorage.setItem('firstRunCompleted', 'false');
+  hideSettingsPanel();
+  showAccessModal();
+  showToast('تم إعادة تعيين رمز الوصول', 'success');
+}
+
+// عرض وإخفاء النوافذ المنبثقة
+function showAccessModal() {
+  document.getElementById('accessModal').classList.add('active');
+}
+
+function hideAccessModal() {
+  document.getElementById('accessModal').classList.remove('active');
+}
+
+function showDeveloperModal() {
+  hideAccessModal();
+  document.getElementById('developerModal').classList.add('active');
+}
+
+function hideDeveloperModal() {
+  document.getElementById('developerModal').classList.remove('active');
+}
+
+function showSettingsPanel() {
+  document.getElementById('settingsPanel').classList.add('active');
+}
+
+function hideSettingsPanel() {
+  document.getElementById('settingsPanel').classList.remove('active');
+}
+
+function showAdminPanel() {
+  document.getElementById('adminPanel').classList.add('active');
+  // التبديل إلى علامة التبويب "إنشاء" افتراضيًا
+  switchAdminTab('create');
+}
+
+function hideAdminPanel() {
+  document.getElementById('adminPanel').classList.remove('active');
+  // إعادة تعيين النموذج
+  document.getElementById('createChannelForm').reset();
+  document.getElementById('thumbnailPreview').innerHTML = '';
+  
+  // إعادة تعيين معالج النموذج إلى الإنشاء
+  const form = document.getElementById('createChannelForm');
+  form.onsubmit = handleCreateChannel;
+  
+  // إعادة تعيين نص الزر
+  const submitButton = document.querySelector('#createChannelForm button[type="submit"]');
+  submitButton.innerHTML = '<i class="fas fa-plus"></i> إضافة قناة';
+}
+
+function hideLoadingScreen() {
+  document.getElementById('loadingScreen').classList.add('hidden');
+}
+
+// عرض الرسائل المنبثقة
+function showToast(message, type = 'info') {
+  const toast = document.getElementById('messageToast');
+  const messageElement = document.getElementById('toastMessage');
+  
+  messageElement.textContent = message;
+  toast.className = `toast ${type} show`;
+  
+  // إخفاء تلقائي بعد 5 ثوانٍ
+  setTimeout(() => {
+    hideToast();
+  }, 5000);
+}
+
+function hideToast() {
+  const toast = document.getElementById('messageToast');
+  toast.classList.remove('show');
+}
+
+// ملاحظات أمنية للاستخدام في الإنتاج:
+// 1. استبدال رمز المطور 7171 بـ Firebase Authentication
+// 2. استخدام قواعد أمان Firebase Realtime Database للتحكم في الوصول
+// مثال لقواعد قاعدة البيانات الآمنة:
+/*
+{
+  "rules": {
+    "channels": {
+      ".read": true,
+      ".write": "auth != null"
+    }
+  }
+}
+*/
