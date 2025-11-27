@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hala X - تطبيق عرض القنوات</title>
+    <link rel="stylesheet" href="styles.css">
+    <!-- Firebase SDK v9+ -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-container">
+            <div class="logo">
+                <h1>Hala X</h1>
+                <p class="tagline">منصة القنوات الموثوقة</p>
+            </div>
+            <div class="header-controls">
+                <div class="search-box">
+                    <input 
+                        type="text" 
+                        id="searchInput" 
+                        placeholder="ابحث عن قناة..."
+                        aria-label="البحث عن القنوات"
+                    >
+                    <button id="searchBtn" aria-label="تنفيذ البحث">🔍</button>
+                </div>
+                <button id="adminToggleBtn" class="admin-toggle-btn" aria-label="فتح لوحة التحكم">⚙️</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Filter Section -->
+        <section class="filter-section" aria-label="تصفية القنوات">
+            <div class="filter-container">
+                <div class="filter-group">
+                    <label for="categoryFilter">التصنيف:</label>
+                    <select id="categoryFilter" aria-label="اختر التصنيف">
+                        <option value="">جميع التصنيفات</option>
+                        <option value="رياضة">رياضة</option>
+                        <option value="ترفيه">ترفيه</option>
+                        <option value="أخبار">أخبار</option>
+                        <option value="تعليم">تعليم</option>
+                        <option value="أخرى">أخرى</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>
+                        <input type="checkbox" id="exactMatchToggle" aria-label="البحث الدقيق">
+                        بحث دقيق
+                    </label>
+                </div>
+                <button id="resetFiltersBtn" class="reset-btn" aria-label="إعادة تعيين المرشحات">إعادة تعيين</button>
+            </div>
+        </section>
+
+        <!-- Channels Grid -->
+        <section class="channels-section" aria-label="قائمة القنوات">
+            <div id="channelsGrid" class="channels-grid">
+                <!-- Channels will be dynamically inserted here -->
+                <div class="loading-message">جاري تحميل القنوات...</div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p>&copy; 2024 Hala X. جميع الحقوق محفوظة.</p>
+    </footer>
+
+    <!-- ============================================ -->
+    <!-- MODALS -->
+    <!-- ============================================ -->
+
+    <!-- First-Run Access Code Modal -->
+    <div id="accessCodeModal" class="modal" role="dialog" aria-labelledby="accessCodeTitle" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="accessCodeTitle">الوصول إلى التطبيق</h2>
+            <p>يرجى إدخال رمز الوصول للمتابعة:</p>
+            <input 
+                type="password" 
+                id="accessCodeInput" 
+                placeholder="أدخل الرمز"
+                aria-label="رمز الوصول"
+                maxlength="4"
+            >
+            <div id="accessCodeError" class="error-message" style="display: none;"></div>
+            <button id="accessCodeSubmitBtn" class="btn-primary">دخول</button>
+        </div>
+    </div>
+
+    <!-- Admin Code Modal -->
+    <div id="adminCodeModal" class="modal" role="dialog" aria-labelledby="adminCodeTitle" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="adminCodeTitle">رمز المطور</h2>
+            <p>أدخل رمز المطور للوصول إلى لوحة التحكم:</p>
+            <input 
+                type="password" 
+                id="adminCodeInput" 
+                placeholder="أدخل الرمز"
+                aria-label="رمز المطور"
+                maxlength="4"
+            >
+            <div id="adminCodeError" class="error-message" style="display: none;"></div>
+            <div class="modal-actions">
+                <button id="adminCodeSubmitBtn" class="btn-primary">تحقق</button>
+                <button id="adminCodeCancelBtn" class="btn-secondary">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="adminPanel" class="modal" role="dialog" aria-labelledby="adminPanelTitle" aria-hidden="true">
+        <div class="modal-content admin-panel-content">
+            <div class="admin-panel-header">
+                <h2 id="adminPanelTitle">لوحة التحكم الإدارية</h2>
+                <button id="closeAdminBtn" class="close-btn" aria-label="إغلاق لوحة التحكم">✕</button>
+            </div>
+
+            <!-- Create Channel Form -->
+            <section class="admin-section">
+                <h3>إضافة قناة جديدة</h3>
+                <form id="createChannelForm" class="channel-form">
+                    <div class="form-group">
+                        <label for="channelTitle">اسم القناة:</label>
+                        <input 
+                            type="text" 
+                            id="channelTitle" 
+                            placeholder="مثال: قناة الرياضة"
+                            required
+                            aria-label="اسم القناة"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="channelThumbnail">رابط الصورة المصغرة:</label>
+                        <input 
+                            type="url" 
+                            id="channelThumbnail" 
+                            placeholder="https://example.com/image.jpg"
+                            required
+                            aria-label="رابط الصورة المصغرة"
+                        >
+                        <div id="thumbnailPreview" class="thumbnail-preview"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="channelUrl">رابط القناة:</label>
+                        <input 
+                            type="url" 
+                            id="channelUrl" 
+                            placeholder="https://example.com/channel"
+                            required
+                            aria-label="رابط القناة"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="channelCategory">التصنيف:</label>
+                        <select id="channelCategory" required aria-label="اختر التصنيف">
+                            <option value="">اختر التصنيف</option>
+                            <option value="رياضة">رياضة</option>
+                            <option value="ترفيه">ترفيه</option>
+                            <option value="أخبار">أخبار</option>
+                            <option value="تعليم">تعليم</option>
+                            <option value="أخرى">أخرى</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="channelDescription">الوصف:</label>
+                        <textarea 
+                            id="channelDescription" 
+                            placeholder="وصف القناة..."
+                            rows="3"
+                            aria-label="وصف القناة"
+                        ></textarea>
+                    </div>
+
+                    <button type="submit" class="btn-primary">إضافة القناة</button>
+                </form>
+                <div id="createChannelMessage" class="message" style="display: none;"></div>
+            </section>
+
+            <!-- Channels Management Table -->
+            <section class="admin-section">
+                <h3>إدارة القنوات</h3>
+                <div id="channelsTableContainer" class="table-container">
+                    <table class="channels-table">
+                        <thead>
+                            <tr>
+                                <th>اسم القناة</th>
+                                <th>التصنيف</th>
+                                <th>الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="channelsTableBody">
+                            <tr><td colspan="3" style="text-align: center;">جاري تحميل القنوات...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Admin Actions -->
+            <section class="admin-section">
+                <h3>إجراءات إدارية</h3>
+                <div class="admin-actions">
+                    <button id="logoutAdminBtn" class="btn-danger">تسجيل الخروج من الإدارة</button>
+                    <button id="resetFirstRunBtn" class="btn-danger">إعادة تعيين الوصول الأول</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <!-- Edit Channel Modal -->
+    <div id="editChannelModal" class="modal" role="dialog" aria-labelledby="editChannelTitle" aria-hidden="true">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="editChannelTitle">تعديل القناة</h2>
+                <button id="closeEditModal" class="close-btn" aria-label="إغلاق">✕</button>
+            </div>
+            <form id="editChannelForm" class="channel-form">
+                <input type="hidden" id="editChannelId">
+
+                <div class="form-group">
+                    <label for="editChannelTitle">اسم القناة:</label>
+                    <input 
+                        type="text" 
+                        id="editChannelTitle" 
+                        required
+                        aria-label="اسم القناة"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="editChannelThumbnail">رابط الصورة المصغرة:</label>
+                    <input 
+                        type="url" 
+                        id="editChannelThumbnail" 
+                        required
+                        aria-label="رابط الصورة المصغرة"
+                    >
+                    <div id="editThumbnailPreview" class="thumbnail-preview"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="editChannelUrl">رابط القناة:</label>
+                    <input 
+                        type="url" 
+                        id="editChannelUrl" 
+                        required
+                        aria-label="رابط القناة"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="editChannelCategory">التصنيف:</label>
+                    <select id="editChannelCategory" required aria-label="اختر التصنيف">
+                        <option value="">اختر التصنيف</option>
+                        <option value="رياضة">رياضة</option>
+                        <option value="ترفيه">ترفيه</option>
+                        <option value="أخبار">أخبار</option>
+                        <option value="تعليم">تعليم</option>
+                        <option value="أخرى">أخرى</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="editChannelDescription">الوصف:</label>
+                    <textarea 
+                        id="editChannelDescription" 
+                        rows="3"
+                        aria-label="وصف القناة"
+                    ></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="submit" class="btn-primary">حفظ التغييرات</button>
+                    <button type="button" id="cancelEditBtn" class="btn-secondary">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteConfirmModal" class="modal" role="dialog" aria-labelledby="deleteConfirmTitle" aria-hidden="true">
+        <div class="modal-content">
+            <h2 id="deleteConfirmTitle">تأكيد الحذف</h2>
+            <p>هل أنت متأكد من رغبتك في حذف هذه القناة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+            <input type="hidden" id="deleteChannelId">
+            <div class="modal-actions">
+                <button id="confirmDeleteBtn" class="btn-danger">حذف</button>
+                <button id="cancelDeleteBtn" class="btn-secondary">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script -->
+    <script src="app.js"></script>
+</body>
+</html>
